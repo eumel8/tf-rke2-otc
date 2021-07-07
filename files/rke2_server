@@ -1,0 +1,135 @@
+#!/bin/bash -xe
+
+# disable non-working ipv6 in OTC ECS
+sysctl -w net.ipv6.conf.all.disable_ipv6=1
+sysctl -w net.ipv6.conf.default.disable_ipv6=1
+sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+for i in 1 2 3 4 5; do
+  apt-get update && break || sleep 10;
+done
+DEBIAN_FRONTEND=noninteractive apt-get -yq -o Dpkg::Options::="--force-confdef" upgrade
+
+# prepare additional disk for etcd
+if [ -e /dev/vdb ] ; then
+  if [ ! -e /dev/vdb1 ] ; then
+    printf "o\nn\np\n1\n\n\nw\n" | fdisk /dev/vdb
+    mkfs.ext4 /dev/vdb1
+  fi
+  mkdir -p /var/lib/rancher/rke2/server/db
+  mount /dev/vdb1 /var/lib/rancher/rke2/server/db
+  if [ -z $(grep "vdb" /etc/fstab) ]; then
+    echo "/dev/vdb1 /var/lib/rancher/rke2/server/db ext4 defaults 0 1" >> /etc/fstab
+  fi
+else
+  echo "no /dev/vdb device, etcd data might be lost"
+fi
+
+# doing os hardening
+# https://github.com/dev-sec/puppet-os-hardening
+for i in 1 2 3 4 5; do
+  wget https://apt.puppetlabs.com/puppet-release-focal.deb || sleep 10;
+done
+dpkg -i puppet-release-focal.deb || exit 1
+rm -f puppet-release-focal.deb
+
+apt-get update
+apt-get -yq install puppet-agent
+
+systemctl stop puppet
+systemctl disable puppet
+/opt/puppetlabs/bin/puppet module install hardening-os_hardening || exit 1
+
+cat > hardening.pp << EOF
+class { 'os_hardening':
+  enable_ipv4_forwarding => true,
+}
+EOF
+
+/opt/puppetlabs/bin/puppet apply hardening.pp || exit 1
+rm -f hardening.pp
+
+# prepare rke2 ha config
+mkdir -p /etc/rancher/rke2
+cat > /etc/rancher/rke2/config.yaml << EOF
+token: ${token}
+tls-san:
+  - ${rancher_host}.${rancher_domain}
+# node-taint:
+#  - "CriticalAddonsOnly=true:NoExecute"
+EOF
+
+# install rke2 with etcd backend
+if [ "${rke2_version}" == "latest" ] || [ "${rke2_version}" == "stable" ]; then
+  curl -svfL4 --retry 100 https://get.rke2.io | INSTALL_RKE2_CHANNEL=${rke2_version} sh -
+else
+  curl -svfL4 --retry 100 https://get.rke2.io | INSTALL_RKE2_VERSION=${rke2_version} sh -
+fi
+
+# start rke service
+systemctl enable rke2-server.service
+systemctl start rke2-server.service
+
+# provide shell env vars
+cat >> /root/.bashrc << EOF
+export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+export PATH=$PATH:/var/lib/rancher/rke2/bin
+source  <(/var/lib/rancher/rke2/bin/kubectl completion bash)
+EOF
+
+
+# install helm (3.3 wont't work on jetstack repo)
+for i in 1 2 3 4 5; do
+  snap install helm --channel=3.2/stable --classic && break || sleep 60;
+done
+
+# wait while at least 1 node is ready
+while [ ! -f  /var/lib/rancher/rke2/bin/kubectl ] ; do
+  sleep 10
+  echo "wait for kubectl"
+done
+
+export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+export PATH=$PATH:/var/lib/rancher/rke2/bin/
+
+while (( node_status < 1 )) ; do
+  echo "wait for k8s is ready"
+  sleep 10
+  node_status=$(/var/lib/rancher/rke2/bin/kubectl get nodes | grep -i ready | wc -l)
+done
+
+# install cert-manager
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+for i in 1 2 3 4 5; do
+  helm upgrade -i \
+    cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --version ${cert-manager_version} \
+    --wait --timeout 10m0s \
+    --set installCRDs=true \
+    --create-namespace && break || sleep 10;
+done
+
+# wait some time for cert-manager to be ready
+sleep 30
+
+# install helm repo
+helm repo add rancher-latest https://releases.rancher.com/server-charts/latest
+
+# install now Rancher
+for i in 1 2 3 4 5; do
+  helm upgrade -i rancher rancher-latest/rancher \
+    --namespace cattle-system \
+    --set hostname=${rancher_host}.${rancher_domain} \
+    --set ingress.tls.source=letsEncrypt \
+    --set letsEncrypt.email=${admin_email} \
+    --set letsEncrypt.ingress.class=nginx \
+    --set replicas=3 \
+    --set auditLog.level=2 \
+    --set systemDefaultRegistry=mtr.external.otc.telekomcloud.com \
+    --set busyboxImage=mtr.external.otc.telekomcloud.com/mcsps/busybox:latest \
+    --version ${rancher_version} \
+    --wait --timeout 10m0s \
+    --create-namespace && break || sleep 60;
+done
