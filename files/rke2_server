@@ -25,6 +25,9 @@ else
   echo "no /dev/vdb device, etcd data might be lost"
 fi
 
+# add etcd user for cis hardening
+useradd -m etcd
+
 # doing os hardening
 # https://github.com/dev-sec/puppet-os-hardening
 for i in 1 2 3 4 5; do
@@ -53,6 +56,7 @@ rm -f hardening.pp
 mkdir -p /etc/rancher/rke2
 cat > /etc/rancher/rke2/config.yaml << EOF
 token: ${token}
+profile: cis-1.6
 tls-san:
   - ${rancher_host}.${rancher_domain}
 # node-taint:
