@@ -1,10 +1,20 @@
 #!/bin/bash -xe
 
+# adjust kernel parameter
+cat > /etc/sysctl.d/99-rke2.conf << EOF
 # disable non-working ipv6 in OTC ECS
-sysctl -w net.ipv6.conf.all.disable_ipv6=1
-sysctl -w net.ipv6.conf.default.disable_ipv6=1
-sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv6.conf.lo.disable_ipv6=1
+# cis benchmark hardening
+vm.overcommit_memory=1
+kernel.panic=10
+kernel.panic_on_oops=1
+EOF
 
+sysctl -p /etc/sysctl.d/99-rke2.conf
+
+# upgrade os (retry if network is not ready)
 for i in 1 2 3 4 5; do
   apt-get update && break || sleep 10;
 done

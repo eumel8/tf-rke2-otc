@@ -1,5 +1,19 @@
 #!/bin/bash -xe
 
+# adjust kernel parameter
+cat > /etc/sysctl.d/99-rke2.conf << EOF
+# disable non-working ipv6 in OTC ECS
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv6.conf.lo.disable_ipv6=1
+# cis benchmark hardening
+vm.overcommit_memory=1
+kernel.panic=10
+kernel.panic_on_oops=1
+EOF
+
+sysctl -p /etc/sysctl.d/99-rke2.conf
+
 # upgrade os (retry if network is not ready)
 for i in 1 2 3 4 5; do
   apt-get update && break || sleep 10;
@@ -64,7 +78,7 @@ fi
 
 # start rke2
 systemctl enable rke2-server.service
-systemctl start rke2-server.service
+systemctl start --no-block rke2-server.service
 
 # extend env vars
 cat >> /root/.bashrc << EOF
@@ -74,20 +88,22 @@ source  <(/var/lib/rancher/rke2/bin/kubectl completion bash)
 EOF
 
 # while join cluster
-#while [ ! -f  /var/lib/rancher/rke2/bin/kubectl ] ; do
-#  sleep 10
-#  echo "wait for kubectl"
-#done
+while [ ! -f  /var/lib/rancher/rke2/bin/kubectl ] ; do
+  sleep 10
+  echo "wait for kubectl"
+done
 
-#export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-#export PATH=$PATH:/var/lib/rancher/rke2/bin/
+export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+export PATH=$PATH:/var/lib/rancher/rke2/bin/
 
-#node_status=$(/var/lib/rancher/rke2/bin/kubectl get nodes | grep -i ready | wc -l)
-#while (( node_status < 1 )) ; do
-#  echo "wait for k8s is ready"
-#  systemctl stop rke2-server.service
-#  sleep 60
-#  systemctl start rke2-server.service
-#  sleep 30
-#  node_status=$(/var/lib/rancher/rke2/bin/kubectl get nodes | grep -i ready | wc -l)
-#done
+node_status=$(/var/lib/rancher/rke2/bin/kubectl get nodes | grep -i ready | wc -l)
+while (( node_status < 1 )) ; do
+  echo "wait for k8s is ready"
+  systemctl stop rke2-server.service
+  sleep 5
+  rke2-killall.sh
+  sleep 10
+  systemctl start --no-block rke2-server.service
+  sleep 30
+  node_status=$(/var/lib/rancher/rke2/bin/kubectl get nodes | grep -i ready | wc -l)
+done
