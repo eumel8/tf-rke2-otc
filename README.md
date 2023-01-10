@@ -27,10 +27,10 @@ You can reach the service under https://hostname.domain
 Prerequistes:
 -------------
 
-* Install Terraform CLI (v0.13.2+):
+* Install Terraform CLI (v1.3.3+):
 
 ```
-curl -o terraform.zip https://releases.hashicorp.com/terraform/0.13.2/terraform_0.13.2_linux_amd64.zip
+curl -o terraform.zip https://releases.hashicorp.com/terraform/1.3.3/terraform_1.3.3_linux_amd64.zip
 unzip terraform
 sudo mv terraform /usr/local/bin/
 rm terraform.zip
@@ -99,9 +99,10 @@ helm -n cattle-system upgrade -i rancher rancher-latest/rancher
   --set hostname=rancher.example.com \
   --set ingress.tls.source=letsEncrypt \
   --set letsEncrypt.email=nobody@example.com \
-  --set letsEncrypt.ingress.class=traefik \
-  --set replicas=2 \
-  --version v2.5.6 
+  --set letsEncrypt.ingress.class=nginx \
+  --set certmanager.version=1.8.1 \
+  --set replicas=3 \
+  --version v2.7.0
 ```
 
 Note: Rancher upgrade via Rancher API will often fail due the Rancher pod restarts during upgrade
@@ -112,7 +113,7 @@ Cert-Manager as well:
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
 helm -n cert-manager upgrade -i cert-manager jetstack/cert-manager \
-    --version v1.2.0
+    --version v1.8.1
 ```
 
 OS-Upgrade (i.e. Kernel/new image) can be done in the following way:

@@ -240,7 +240,7 @@ data "template_file" "rke2_server" {
     rancher_domain       = var.rancher_domain
     rancher_version      = var.rancher_version
     rke2_version         = var.rke2_version
-    cert-manager_version = var.cert-manager_version
+    cert-manager_version = trim(var.cert-manager_version,"v")
   }
 }
 

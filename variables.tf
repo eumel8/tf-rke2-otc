@@ -187,7 +187,7 @@ variable "rke2_version" {
 
 variable "cert-manager_version" {
   description = "Cert-Manager chart version"
-  default     = "v1.3.1"
+  default     = "v1.8.1"
 }
 
 variable "token" {
@@ -201,5 +201,5 @@ variable "token" {
 
 variable "rancher_version" {
   description = "Version of Rancher app"
-  default     = "v2.5.8"
+  default     = "v2.7.0"
 }

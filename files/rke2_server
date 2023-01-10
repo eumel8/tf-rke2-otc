@@ -8,8 +8,10 @@ net.ipv6.conf.default.disable_ipv6=1
 net.ipv6.conf.lo.disable_ipv6=1
 # cis benchmark hardening
 vm.overcommit_memory=1
+vm.panic_on_oom=0
 kernel.panic=10
 kernel.panic_on_oops=1
+kernel.keys.root_maxbytes=25000000
 EOF
 
 sysctl -p /etc/sysctl.d/99-rke2.conf
@@ -82,6 +84,7 @@ fi
 
 # start rke service
 systemctl enable rke2-server.service
+sleep 5
 systemctl start rke2-server.service
 
 # provide shell env vars
@@ -119,7 +122,7 @@ for i in 1 2 3 4 5; do
   helm upgrade -i \
     cert-manager jetstack/cert-manager \
     --namespace cert-manager \
-    --version ${cert-manager_version} \
+    --version v${cert-manager_version} \
     --wait --timeout 10m0s \
     --set installCRDs=true \
     --create-namespace && break || sleep 10;
@@ -139,10 +142,11 @@ for i in 1 2 3 4 5; do
     --set ingress.tls.source=letsEncrypt \
     --set letsEncrypt.email=${admin_email} \
     --set letsEncrypt.ingress.class=nginx \
+    --set certmanager.version=${cert-manager_version} \
     --set replicas=3 \
     --set auditLog.level=2 \
-    --set systemDefaultRegistry=mtr.external.otc.telekomcloud.com \
-    --set busyboxImage=mtr.external.otc.telekomcloud.com/mcsps/busybox:latest \
+    --set systemDefaultRegistry=mtr.devops.telekom.de \
+    --set busyboxImage=mtr.devops.telekom.de/mcsps/busybox:latest \
     --version ${rancher_version} \
     --wait --timeout 10m0s \
     --create-namespace && break || sleep 60;
